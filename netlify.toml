@@ -1,0 +1,19 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Frontend pollt /api/results -> Netlify Function
+[[redirects]]
+  from = "/api/results"
+  to = "/.netlify/functions/results"
+  status = 200
+
+[[redirects]]
+  from = "/api/timeseries"
+  to = "/.netlify/functions/timeseries"
+  status = 200
+
+# SPA fallback nicht nötig - eine HTML-Seite. Aber sicher: explizit nur API umleiten.

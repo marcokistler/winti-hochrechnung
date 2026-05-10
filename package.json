@@ -1,0 +1,18 @@
+{
+  "name": "winti-hochrechnung",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Live-Hochrechnung Stadtpräsidium Winterthur, 2. Wahlgang 10.05.2026",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "dev": "netlify dev",
+    "deploy": "netlify deploy --prod"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

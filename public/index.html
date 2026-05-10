@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1117" />
+    <title>Hochrechnung Stadtpräsidium Winterthur — 2. Wahlgang</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="dot"></span>
+        <h1>Stadtpräsidium Winterthur — Live-Hochrechnung</h1>
+      </div>
+      <div class="meta">
+        <span id="status-pill" class="pill pill-loading">Lade…</span>
+        <span class="last-update" id="last-update">—</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="card hero">
+        <div class="hero-row">
+          <div class="cand cand-bopp" id="card-bopp">
+            <div class="cand-name">Kaspar Bopp <span class="party">SP</span></div>
+            <div class="cand-stimmen" id="bopp-stimmen">—</div>
+            <div class="cand-anteil" id="bopp-anteil">—</div>
+          </div>
+          <div class="vs">vs.</div>
+          <div class="cand cand-fritschi" id="card-fritschi">
+            <div class="cand-name">Stefan Fritschi <span class="party">FDP</span></div>
+            <div class="cand-stimmen" id="fritschi-stimmen">—</div>
+            <div class="cand-anteil" id="fritschi-anteil">—</div>
+          </div>
+        </div>
+        <div class="vorsprung-row">
+          <div class="vorsprung" id="vorsprung">—</div>
+          <div class="bar-container">
+            <div class="bar bar-bopp" id="bar-bopp"></div>
+            <div class="bar bar-fritschi" id="bar-fritschi"></div>
+            <div class="bar-50"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card hochrechnung" id="hochrechnung-card">
+        <div class="card-header">
+          <h2>Hochrechnung</h2>
+          <span class="pill pill-info" id="hr-status">—</span>
+        </div>
+        <div class="hr-content" id="hr-content">
+          <div class="hr-headline">
+            <div class="hr-anteil">
+              <span class="hr-label">Bopp-Anteil (geschätzt)</span>
+              <span class="hr-value" id="hr-anteil">—</span>
+              <span class="hr-interval" id="hr-interval">—</span>
+            </div>
+            <div class="hr-sieg">
+              <span class="hr-label">Wahrscheinlichkeit Sieg Bopp</span>
+              <span class="hr-value" id="hr-psieg">—</span>
+            </div>
+          </div>
+          <div class="hr-fortschritt">
+            <div class="fortschritt-text">
+              <span id="ausg-kreise">0</span>/7 Stadtkreise ·
+              <span id="ausg-stimmen">0</span> Stimmen ausgezählt
+            </div>
+            <div class="fortschritt-bar">
+              <div class="fortschritt-fill" id="fortschritt-fill"></div>
+            </div>
+          </div>
+          <div class="hr-swing" id="hr-swing"></div>
+        </div>
+        <p class="hr-note" id="hr-message"></p>
+      </section>
+
+      <section class="card timeseries-card" id="ts-card" hidden>
+        <div class="card-header">
+          <h2>Verlauf der Hochrechnung</h2>
+        </div>
+        <svg id="ts-svg" viewBox="0 0 600 200" preserveAspectRatio="none"></svg>
+      </section>
+
+      <section class="card stadtkreise-card">
+        <div class="card-header">
+          <h2>Stadtkreise</h2>
+          <span class="card-subtitle">Anteil Bopp · Swing zum 1. WG</span>
+        </div>
+        <div class="stadtkreise-grid" id="stadtkreise-grid"></div>
+      </section>
+
+      <section class="card method-card">
+        <details>
+          <summary>Methodik &amp; Disclaimer</summary>
+          <div class="method-content">
+            <p>
+              <strong>Inoffizielle Hochrechnung.</strong> Modell: Stadtkreis-Swing.
+              Pro ausgezähltem Stadtkreis wird die Verschiebung
+              (Swing) gegenüber dem 1. Wahlgang berechnet, gewichtet gemittelt
+              und auf die noch offenen Stadtkreise angewandt. Die geschätzten
+              Stimmenzahlen pro offenem Kreis werden aus den Wahlberechtigten
+              und der erwarteten Beteiligung (extrapoliert aus den ausgezählten
+              Kreisen, sonst 1. WG) abgeleitet.
+            </p>
+            <p>
+              <strong>Konfidenzintervall</strong> (95 %): Standardabweichung der
+              Swings über die ausgezählten Stadtkreise, skaliert mit dem Anteil
+              der noch nicht ausgezählten Stimmen. Bei nur einem ausgezählten
+              Kreis: Fallback ±2.5 Prozentpunkte. Es ist eine konservative
+              Approximation, keine echte Bayes-Posterior.
+            </p>
+            <p>
+              <strong>Daten:</strong> Statistisches Amt Kanton Zürich, OGD
+              Datensatz 734 (Echtzeitdaten am Abstimmungstag), Auflösung über
+              <a
+                href="https://opendata.swiss/de/dataset/echtzeitdaten-am-abstimmungstag-des-kantons-zurich-kommunale-und-regionale-vorlagen"
+                target="_blank"
+                rel="noopener"
+                >opendata.swiss</a
+              >. Aktualisierung der Live-Daten in der Regel ca. alle 10 min.
+            </p>
+            <p class="src-link">
+              Direkt-URL: <span id="src-url">—</span>
+            </p>
+          </div>
+        </details>
+      </section>
+    </main>
+
+    <footer>
+      <span>
+        Inoffiziell · Auto-Refresh alle 30 s · Nächste Aktualisierung
+        <span id="countdown">—</span> s
+      </span>
+    </footer>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

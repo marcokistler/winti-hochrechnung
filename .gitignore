@@ -1,0 +1,11 @@
+node_modules/
+.netlify/
+.env
+.env.*
+!.env.example
+*.log
+
+# Lokale Debug-Dumps
+ckan.json
+wg1.json
+wg2.json
