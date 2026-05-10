@@ -23,15 +23,21 @@
       <section class="card hero">
         <div class="hero-row">
           <div class="cand cand-bopp" id="card-bopp">
-            <div class="cand-name">Kaspar Bopp <span class="party">SP</span></div>
-            <div class="cand-stimmen" id="bopp-stimmen">—</div>
-            <div class="cand-anteil" id="bopp-anteil">—</div>
+            <img class="cand-photo" src="/img/bopp.jpg" alt="Kaspar Bopp" loading="lazy" />
+            <div class="cand-info">
+              <div class="cand-name">Kaspar Bopp <span class="party">SP</span></div>
+              <div class="cand-stimmen" id="bopp-stimmen">—</div>
+              <div class="cand-anteil" id="bopp-anteil">—</div>
+            </div>
           </div>
           <div class="vs">vs.</div>
           <div class="cand cand-fritschi" id="card-fritschi">
-            <div class="cand-name">Stefan Fritschi <span class="party">FDP</span></div>
-            <div class="cand-stimmen" id="fritschi-stimmen">—</div>
-            <div class="cand-anteil" id="fritschi-anteil">—</div>
+            <img class="cand-photo" src="/img/fritschi.jpg" alt="Stefan Fritschi" loading="lazy" />
+            <div class="cand-info">
+              <div class="cand-name">Stefan Fritschi <span class="party">FDP</span></div>
+              <div class="cand-stimmen" id="fritschi-stimmen">—</div>
+              <div class="cand-anteil" id="fritschi-anteil">—</div>
+            </div>
           </div>
         </div>
         <div class="vorsprung-row">
@@ -55,10 +61,84 @@
               <span class="hr-label">Bopp-Anteil (geschätzt)</span>
               <span class="hr-value" id="hr-anteil">—</span>
               <span class="hr-interval" id="hr-interval">—</span>
+              <span class="hr-interval hr-interval-99" id="hr-interval-99">—</span>
             </div>
             <div class="hr-sieg">
               <span class="hr-label">Wahrscheinlichkeit Sieg Bopp</span>
               <span class="hr-value" id="hr-psieg">—</span>
+            </div>
+          </div>
+          <div class="hr-ki-bar-wrap">
+            <div class="hr-ki-bar" id="hr-ki-bar">
+              <!-- 99% band (breit) -->
+              <div class="hr-ki-band-99" id="hr-ki-band-99"></div>
+              <!-- 95% band (schmal) -->
+              <div class="hr-ki-band-95" id="hr-ki-band-95"></div>
+              <!-- Punktschätzung -->
+              <div class="hr-ki-point" id="hr-ki-point"></div>
+              <!-- 50%-Marker -->
+              <div class="hr-ki-50"></div>
+              <!-- Achsen-Beschriftung -->
+              <div class="hr-ki-axis">
+                <span>40 %</span>
+                <span>45 %</span>
+                <span>50 %</span>
+                <span>55 %</span>
+                <span>60 %</span>
+              </div>
+            </div>
+            <div class="hr-ki-legend">
+              <span class="legend-item"><span class="legend-99"></span>99 %-KI</span>
+              <span class="legend-item"><span class="legend-95"></span>95 %-KI</span>
+              <span class="legend-item"><span class="legend-pt"></span>Schätzung</span>
+            </div>
+          </div>
+          <div class="hr-stimmen-row">
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Bopp Stimmen (gesamt)</span>
+              <span class="hr-stimmen-value" id="hr-bopp-stimmen">—</span>
+            </div>
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Fritschi Stimmen (gesamt)</span>
+              <span class="hr-stimmen-value" id="hr-fritschi-stimmen">—</span>
+            </div>
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Vorsprung Bopp</span>
+              <span class="hr-stimmen-value" id="hr-vorsprung">—</span>
+              <span class="hr-interval" id="hr-vorsprung-ki">—</span>
+              <span class="hr-interval hr-interval-99" id="hr-vorsprung-ki-99">—</span>
+            </div>
+          </div>
+          <div class="hr-stimmen-row">
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Beteiligung (gesamt)</span>
+              <span class="hr-stimmen-value" id="hr-beteiligung">—</span>
+              <span class="hr-interval" id="hr-beteiligung-vgl">—</span>
+            </div>
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Eingelegte Stimmzettel</span>
+              <span class="hr-stimmen-value" id="hr-eingelegte">—</span>
+            </div>
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Wahlberechtigte</span>
+              <span class="hr-stimmen-value" id="hr-wahlberechtigte">—</span>
+            </div>
+          </div>
+          <div class="hr-stimmen-row hr-stimmen-row-secondary">
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Vereinzelte Stimmen</span>
+              <span class="hr-stimmen-value-sm" id="hr-vereinzelte">—</span>
+              <span class="hr-interval" id="hr-vereinzelte-anteil">—</span>
+            </div>
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Leere Stimmzettel</span>
+              <span class="hr-stimmen-value-sm" id="hr-leere">—</span>
+              <span class="hr-interval" id="hr-leere-anteil">—</span>
+            </div>
+            <div class="hr-stimmen-cand">
+              <span class="hr-label">Ungültige Stimmzettel</span>
+              <span class="hr-stimmen-value-sm" id="hr-ungueltig">—</span>
+              <span class="hr-interval" id="hr-ungueltig-anteil">—</span>
             </div>
           </div>
           <div class="hr-fortschritt">

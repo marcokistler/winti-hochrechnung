@@ -6,7 +6,8 @@
   "description": "Live-Hochrechnung Stadtpräsidium Winterthur, 2. Wahlgang 10.05.2026",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "dev": "netlify dev",
+    "dev": "node --watch --watch-path=netlify --watch-path=test/local-server.mjs test/local-server.mjs",
+    "dev:netlify": "netlify dev",
     "deploy": "netlify deploy --prod"
   },
   "engines": {

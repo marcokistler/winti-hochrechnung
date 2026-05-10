@@ -168,6 +168,15 @@ export function parseStadtpraesidium(dayJson) {
   )?.stimmen;
   const sumTwo = (totalBopp || 0) + (totalFritschi || 0);
 
+  // Vereinzelte = 3. Kandidatenposition (sonstige handgeschriebene Namen).
+  // Im 1. WG existiert sie als Eintrag ohne nachname-Mapping; im 2. WG explizit
+  // als kandidatNummer "999" mit nachname="Vereinzelte". Wir suchen sie nach
+  // beiden Mustern.
+  const vereinzelte = [...lookup.values()].find(
+    (k) => /Vereinzelte/i.test(k.nachname) || k.kandidatNummer === "999",
+  );
+  const vereinzelteId = vereinzelte?.kandidatNummer ?? null;
+
   const stadtkreise = (v.zaehlkreise || []).map((z) => {
     const zr = z.resultat || {};
     const cBopp = (zr.kandidaten || []).find(
@@ -176,8 +185,12 @@ export function parseStadtpraesidium(dayJson) {
     const cFr = (zr.kandidaten || []).find(
       (k) => k.kandidatNummer === fritschi.kandidatNummer,
     );
+    const cV = vereinzelteId
+      ? (zr.kandidaten || []).find((k) => k.kandidatNummer === vereinzelteId)
+      : null;
     const sb = cBopp?.stimmen ?? null;
     const sf = cFr?.stimmen ?? null;
+    const sv = cV?.stimmen ?? null;
     const denom = sb != null && sf != null ? sb + sf : null;
     return {
       geoLevelnummer: z.geoLevelnummer,
@@ -187,9 +200,13 @@ export function parseStadtpraesidium(dayJson) {
       wahlberechtigte: zr.anzahlWahlberechtigte ?? null,
       eingelegte: zr.eingelegteWahlzettel ?? null,
       gueltig: zr.gueltigeWahlzettel ?? null,
+      ungueltige: zr.ungueltigeWahlzettel ?? null,
+      leere: zr.leereWahlzettel ?? null,
+      kandidatenStimmenTotal: zr.kandidatenStimmenTotal ?? null,
       beteiligung: zr.wahlbeteiligungInProzent ?? null,
       stimmenBopp: sb,
       stimmenFritschi: sf,
+      stimmenVereinzelte: sv,
       anteilBopp: denom && denom > 0 ? sb / denom : null,
     };
   });
@@ -218,9 +235,17 @@ export function parseStadtpraesidium(dayJson) {
       wahlberechtigte: r.anzahlWahlberechtigte ?? null,
       eingelegte: r.eingelegteWahlzettel ?? null,
       gueltig: r.gueltigeWahlzettel ?? null,
+      ungueltige: r.ungueltigeWahlzettel ?? null,
+      leere: r.leereWahlzettel ?? null,
+      kandidatenStimmenTotal: r.kandidatenStimmenTotal ?? null,
       beteiligung: r.wahlbeteiligungInProzent ?? null,
       stimmenBopp: totalBopp ?? null,
       stimmenFritschi: totalFritschi ?? null,
+      stimmenVereinzelte:
+        vereinzelteId
+          ? r.kandidaten?.find((k) => k.kandidatNummer === vereinzelteId)
+              ?.stimmen ?? null
+          : null,
       anteilBopp: sumTwo > 0 ? (totalBopp || 0) / sumTwo : null,
       anteilFritschi: sumTwo > 0 ? (totalFritschi || 0) / sumTwo : null,
     },

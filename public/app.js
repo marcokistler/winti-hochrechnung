@@ -21,15 +21,29 @@ const fmtSignedPP = (n, digits = 1) =>
   n == null || isNaN(n)
     ? "—"
     : (n >= 0 ? "+" : "") + (n * 100).toFixed(digits) + " pp";
+
+// Signierte Differenz mit Farbe (positiv → bopp-Farbe, negativ → fritschi-Farbe).
+// Für Beteiligungs-Diffs neutral coden (nur Plus/Minus, keine Partei-Konnotation).
+function signedDiffHtml(n, unit = "pp", neutral = false) {
+  if (n == null || isNaN(n)) return "—";
+  const text = (n >= 0 ? "+" : "") + (n * 100).toFixed(1) + " " + unit;
+  if (neutral) return `<span class="diff">${text}</span>`;
+  return `<span class="${n >= 0 ? "swing-up" : "swing-down"}">${text}</span>`;
+}
 const fmtTime = (ts) => {
   if (!ts) return "—";
   const d = typeof ts === "number" ? new Date(ts) : new Date(ts);
   return d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 };
 
+// Browser-URL-Parameter (z.B. ?mock=3&swing=4&noise=1.5) werden an die API weitergereicht.
+// Das ist v.a. für lokale Tests gedacht — in Produktion einfach ohne Params aufrufen.
+const passthroughParams = new URLSearchParams(window.location.search).toString();
+const apiSuffix = passthroughParams ? "?" + passthroughParams : "";
+
 async function fetchResults() {
   try {
-    const res = await fetch("/api/results", { cache: "no-store" });
+    const res = await fetch("/api/results" + apiSuffix, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     state.lastFetchAt = Date.now();
@@ -130,19 +144,91 @@ function render(data) {
     $("hr-anteil").textContent = fmtPct(hr.anteilBopp);
     if (hr.anteilBoppLower === hr.anteilBoppUpper) {
       $("hr-interval").textContent = "exakt";
+      $("hr-interval-99").textContent = "";
     } else {
       $("hr-interval").textContent =
         `95 %-KI: ${fmtPct(hr.anteilBoppLower)} – ${fmtPct(hr.anteilBoppUpper)}`;
+      $("hr-interval-99").textContent =
+        `99 %-KI: ${fmtPct(hr.anteilBoppLower99)} – ${fmtPct(hr.anteilBoppUpper99)}`;
     }
     if (p.pSiegBopp == null) {
       $("hr-psieg").textContent = "—";
     } else {
       $("hr-psieg").textContent = (p.pSiegBopp * 100).toFixed(0) + " %";
     }
+
+    // KI-Bar visuell — Achsen-Range 0.40–0.60
+    renderKiBar(hr);
+
+    // Absolute Zahlen
+    $("hr-bopp-stimmen").textContent = fmtNum(hr.stimmenBopp);
+    $("hr-fritschi-stimmen").textContent = fmtNum(hr.stimmenFritschi);
+    const lead = hr.vorsprung;
+    if (lead != null) {
+      const sign = lead >= 0 ? "+" : "−";
+      $("hr-vorsprung").textContent = `${sign}${fmtNum(Math.abs(lead))}`;
+      $("hr-vorsprung").style.color = lead >= 0 ? "var(--bopp)" : "var(--fritschi)";
+    }
+    if (hr.vorsprungLower != null && hr.vorsprungUpper != null && hr.vorsprungLower !== hr.vorsprungUpper) {
+      const sgn = (n) => (n >= 0 ? "+" : "−") + fmtNum(Math.abs(n));
+      $("hr-vorsprung-ki").textContent =
+        `95 %-KI: ${sgn(Math.round(hr.vorsprungLower))} bis ${sgn(Math.round(hr.vorsprungUpper))}`;
+      if (hr.vorsprungLower99 != null && hr.vorsprungUpper99 != null) {
+        $("hr-vorsprung-ki-99").textContent =
+          `99 %-KI: ${sgn(Math.round(hr.vorsprungLower99))} bis ${sgn(Math.round(hr.vorsprungUpper99))}`;
+      } else {
+        $("hr-vorsprung-ki-99").textContent = "";
+      }
+    } else {
+      $("hr-vorsprung-ki").textContent = "exakt";
+      $("hr-vorsprung-ki-99").textContent = "";
+    }
+
+    // Beteiligung
+    if (hr.beteiligung != null) {
+      $("hr-beteiligung").textContent = hr.beteiligung.toFixed(1) + " %";
+      const baseBet = data.baseline?.total?.beteiligung;
+      if (baseBet != null) {
+        const diff = hr.beteiligung - baseBet;
+        const arrow = diff > 0.1 ? "↑" : diff < -0.1 ? "↓" : "≈";
+        $("hr-beteiligung-vgl").textContent =
+          `1. WG: ${baseBet.toFixed(1)} % ${arrow} ${diff >= 0 ? "+" : ""}${diff.toFixed(1)} pp`;
+      } else {
+        $("hr-beteiligung-vgl").textContent = "";
+      }
+    } else {
+      $("hr-beteiligung").textContent = "—";
+      $("hr-beteiligung-vgl").textContent = "";
+    }
+
+    $("hr-eingelegte").textContent = fmtNum(hr.eingelegte);
+    $("hr-wahlberechtigte").textContent = fmtNum(hr.wahlberechtigte);
+
+    // Vereinzelte / leere / ungültig (mit %-Anteil zu eingelegt)
+    const eAbs = hr.eingelegte || 1;
+    $("hr-vereinzelte").textContent = fmtNum(hr.stimmenVereinzelte);
+    $("hr-vereinzelte-anteil").textContent =
+      hr.stimmenVereinzelte != null ? `${((hr.stimmenVereinzelte / eAbs) * 100).toFixed(1)} % der eingelegten` : "";
+    $("hr-leere").textContent = fmtNum(hr.leere);
+    $("hr-leere-anteil").textContent =
+      hr.leere != null ? `${((hr.leere / eAbs) * 100).toFixed(1)} % der eingelegten` : "";
+    $("hr-ungueltig").textContent = fmtNum(hr.ungueltige);
+    $("hr-ungueltig-anteil").textContent =
+      hr.ungueltige != null ? `${((hr.ungueltige / eAbs) * 100).toFixed(1)} % der eingelegten` : "";
   } else {
     $("hr-anteil").textContent = "—";
     $("hr-interval").textContent = "—";
+    $("hr-interval-99").textContent = "";
     $("hr-psieg").textContent = "—";
+    for (const id of ["hr-bopp-stimmen","hr-fritschi-stimmen","hr-vorsprung","hr-beteiligung","hr-eingelegte","hr-wahlberechtigte","hr-vereinzelte","hr-leere","hr-ungueltig"]) $(id).textContent = "—";
+    $("hr-vorsprung-ki").textContent = "—";
+    $("hr-vorsprung-ki-99").textContent = "";
+    $("hr-beteiligung-vgl").textContent = "";
+    for (const id of ["hr-vereinzelte-anteil","hr-leere-anteil","hr-ungueltig-anteil"]) $(id).textContent = "";
+    // KI-Bar zurücksetzen
+    $("hr-ki-band-95").style.width = "0%";
+    $("hr-ki-band-99").style.width = "0%";
+    $("hr-ki-point").style.left = "50%";
   }
 
   $("ausg-kreise").textContent = p.ausgezaehlteKreise ?? 0;
@@ -163,12 +249,48 @@ function render(data) {
   // Stadtkreise
   renderKreise(p.stadtkreise);
 
-  // Timeseries lazy-show
-  $("ts-card").hidden = (p.status === "warten");
+  // Timeseries: Sichtbarkeit wird in renderTimeseries() basierend auf Punktanzahl gesetzt
 
   // Footer/meta
   $("last-update").textContent = "Quelle: " + fmtTime(data.sourceTimestamp);
   $("src-url").textContent = data.sourceUrl || "—";
+
+  // Mock-Modus visuell kennzeichnen
+  if (data.cache === "mock" || data.mock) {
+    document.body.classList.add("mock-mode");
+    let banner = document.getElementById("mock-banner");
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "mock-banner";
+      banner.className = "mock-banner";
+      document.body.insertBefore(banner, document.body.firstChild);
+    }
+    const m = data.mock || {};
+    banner.textContent =
+      `🧪 SIMULATION — ausgezählt: ${m.ausgezaehlt}/7 · Swing: ${m.swingPp >= 0 ? "+" : ""}${m.swingPp}pp · Rauschen: ±${m.noisePp}pp`;
+  } else {
+    document.body.classList.remove("mock-mode");
+    document.getElementById("mock-banner")?.remove();
+  }
+}
+
+function renderKiBar(hr) {
+  // X-Achse: 40%-60%, also 20pp Spannweite
+  const X_MIN = 0.4;
+  const X_MAX = 0.6;
+  const range = X_MAX - X_MIN;
+  const pct = (v) => Math.max(0, Math.min(100, ((v - X_MIN) / range) * 100));
+  const lo95 = pct(hr.anteilBoppLower);
+  const hi95 = pct(hr.anteilBoppUpper);
+  const lo99 = pct(hr.anteilBoppLower99 ?? hr.anteilBoppLower);
+  const hi99 = pct(hr.anteilBoppUpper99 ?? hr.anteilBoppUpper);
+  const point = pct(hr.anteilBopp);
+
+  $("hr-ki-band-95").style.left = lo95 + "%";
+  $("hr-ki-band-95").style.width = Math.max(0.5, hi95 - lo95) + "%";
+  $("hr-ki-band-99").style.left = lo99 + "%";
+  $("hr-ki-band-99").style.width = Math.max(0.5, hi99 - lo99) + "%";
+  $("hr-ki-point").style.left = `calc(${point}% - 1.5px)`;
 }
 
 function renderKreise(kreise) {
@@ -185,10 +307,10 @@ function renderKreise(kreise) {
       const totalK = (k.stimmenBopp ?? 0) + (k.stimmenFritschi ?? 0);
       const bbW = totalK > 0 ? (k.stimmenBopp / totalK) * 100 : 0;
       const bfW = totalK > 0 ? (k.stimmenFritschi / totalK) * 100 : 0;
-      const swingHtml =
-        k.swing != null
-          ? `<span class="${k.swing >= 0 ? "swing-up" : "swing-down"}">${fmtSignedPP(k.swing)}</span>`
-          : "—";
+      const swingHtml = signedDiffHtml(k.swing, "pp");
+      const betDiffHtml = signedDiffHtml(
+        k.beteiligungDiff != null ? k.beteiligungDiff / 100 : null, "pp",
+      );
       body = `
         <div class="kreis-anteil">${fmtPct(k.anteilBopp)}</div>
         <div class="kreis-bar">
@@ -201,7 +323,34 @@ function renderKreise(kreise) {
         </div>
         <div class="kreis-meta">
           <span>1. WG: ${fmtPct(k.baselineAnteilBopp)}</span>
-          <span>Beteiligung: ${k.beteiligung != null ? k.beteiligung.toFixed(1) + " %" : "—"}</span>
+          <span>Bet: ${k.beteiligung != null ? k.beteiligung.toFixed(1) + " %" : "—"} ${betDiffHtml}</span>
+        </div>
+      `;
+    } else if (k.geschaetzt && k.geschaetzterAnteilBopp != null) {
+      // Offen, aber mit Schätzwerten
+      const totalKEst = k.geschaetzteStimmenBopp + k.geschaetzteStimmenFritschi;
+      const bbW = totalKEst > 0 ? (k.geschaetzteStimmenBopp / totalKEst) * 100 : 0;
+      const bfW = totalKEst > 0 ? (k.geschaetzteStimmenFritschi / totalKEst) * 100 : 0;
+      const swingHtml = signedDiffHtml(k.geschaetzterSwing, "pp");
+      const betDiffHtml = signedDiffHtml(
+        k.geschaetzteBeteiligungDiff != null ? k.geschaetzteBeteiligungDiff / 100 : null, "pp",
+      );
+      body = `
+        <div class="kreis-anteil estimate">
+          ~${fmtPct(k.geschaetzterAnteilBopp)}
+          <span class="estimate-tag">geschätzt</span>
+        </div>
+        <div class="kreis-bar estimate-bar">
+          <div class="bb" style="width:${bbW}%"></div>
+          <div class="bf" style="width:${bfW}%"></div>
+        </div>
+        <div class="kreis-meta">
+          <span>~${fmtNum(k.geschaetzteStimmenBopp)} : ${fmtNum(k.geschaetzteStimmenFritschi)}</span>
+          <span>~Swing ${swingHtml}</span>
+        </div>
+        <div class="kreis-meta">
+          <span>1. WG: ${fmtPct(k.baselineAnteilBopp)}</span>
+          <span>~Bet ${k.geschaetzteBeteiligung != null ? k.geschaetzteBeteiligung.toFixed(1) + " %" : "—"} ${betDiffHtml}</span>
         </div>
       `;
     } else {
@@ -227,7 +376,12 @@ function renderKreise(kreise) {
 function renderTimeseries(points) {
   const svg = $("ts-svg");
   svg.innerHTML = "";
-  if (points.length < 2) return;
+  const tsCard = document.getElementById("ts-card");
+  if (points.length < 2) {
+    if (tsCard) tsCard.hidden = true;
+    return;
+  }
+  if (tsCard) tsCard.hidden = false;
   const W = 600,
     H = 200,
     pad = { l: 40, r: 10, t: 10, b: 24 };
@@ -241,7 +395,7 @@ function renderTimeseries(points) {
   let yMin = 0.4,
     yMax = 0.6;
   for (const p of points) {
-    for (const v of [p.anteilBopp, p.anteilBoppLower, p.anteilBoppUpper, p.aktuellAnteilBopp]) {
+    for (const v of [p.anteilBopp, p.anteilBoppLower, p.anteilBoppUpper, p.anteilBoppLower99, p.anteilBoppUpper99, p.aktuellAnteilBopp]) {
       if (v == null) continue;
       if (v < yMin) yMin = v - 0.02;
       if (v > yMax) yMax = v + 0.02;
@@ -270,28 +424,40 @@ function renderTimeseries(points) {
     svg.appendChild(t);
   }
 
-  // Konfidenzband
+  // Konfidenzbänder (zuerst 99%-Band, darüber 95%-Band, dann Punktschätzung)
   const filtered = points.filter((p) => p.anteilBopp != null);
   if (filtered.length >= 2) {
-    let dUp = "", dLo = "";
-    filtered.forEach((p, i) => {
-      const x = px(p.ts);
-      dUp += (i === 0 ? "M" : "L") + x + " " + py(p.anteilBoppUpper ?? p.anteilBopp);
-      dLo += (i === 0 ? "L" : "L") + x + " " + py(p.anteilBoppLower ?? p.anteilBopp);
-    });
-    // Reverse lower
-    let dLoRev = "";
-    [...filtered].reverse().forEach((p, i) => {
-      const x = px(p.ts);
-      dLoRev += "L" + x + " " + py(p.anteilBoppLower ?? p.anteilBopp);
-    });
-    const band = svgEl("path", {
-      d: dUp + dLoRev + "Z",
-      fill: "var(--bopp)",
-      "fill-opacity": "0.15",
+    function bandPath(loKey, hiKey) {
+      let dUp = "", dLo = "";
+      filtered.forEach((p, i) => {
+        const x = px(p.ts);
+        dUp += (i === 0 ? "M" : "L") + x + " " + py(p[hiKey] ?? p.anteilBopp);
+      });
+      [...filtered].reverse().forEach((p) => {
+        const x = px(p.ts);
+        dLo += "L" + x + " " + py(p[loKey] ?? p.anteilBopp);
+      });
+      return dUp + dLo + "Z";
+    }
+    // 99%-Band (heller)
+    const has99 = filtered.some((p) => p.anteilBoppLower99 != null);
+    if (has99) {
+      const band99 = svgEl("path", {
+        d: bandPath("anteilBoppLower99", "anteilBoppUpper99"),
+        fill: "#fbbf24",
+        "fill-opacity": "0.18",
+        stroke: "none",
+      });
+      svg.appendChild(band99);
+    }
+    // 95%-Band (kräftiger)
+    const band95 = svgEl("path", {
+      d: bandPath("anteilBoppLower", "anteilBoppUpper"),
+      fill: "#fbbf24",
+      "fill-opacity": "0.45",
       stroke: "none",
     });
-    svg.appendChild(band);
+    svg.appendChild(band95);
 
     // Punktschätzung
     let dP = "";
@@ -301,7 +467,7 @@ function renderTimeseries(points) {
     const lineP = svgEl("path", {
       d: dP,
       stroke: "var(--bopp)",
-      "stroke-width": "2",
+      "stroke-width": "2.5",
       fill: "none",
     });
     svg.appendChild(lineP);

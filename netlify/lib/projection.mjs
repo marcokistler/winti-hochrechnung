@@ -3,17 +3,12 @@
 // Inputs:
 //   baseline = parseStadtpraesidium(...) der 1.-WG-Daten (alle Stadtkreise ausgezählt)
 //   current  = parseStadtpraesidium(...) der 2.-WG-Daten (gemischt, einige offen)
-//
-// Output: siehe project()
 
 const Z_95 = 1.96;
+const Z_99 = 2.576;
 
-/**
- * Standard Normal CDF, Abramowitz & Stegun 7.1.26 Approximation.
- * Genau genug fürs Dashboard.
- */
+/** Standard Normal CDF — Abramowitz/Stegun 26.2.17 */
 function normCdf(x) {
-  // Approximation nach Abramowitz/Stegun 26.2.17
   const b1 = 0.319381530;
   const b2 = -0.356563782;
   const b3 = 1.781477937;
@@ -33,23 +28,62 @@ function normCdf(x) {
   return 1 - normCdf(-x);
 }
 
-/**
- * Hauptfunktion. Liefert Hochrechnungs-Objekt.
- */
+/** Schätzung für einen einzelnen offenen Stadtkreis. */
+function estimateOpenKreis(base, swingAvg, beteiligungAvg) {
+  const wb = base.wahlberechtigte || 0;
+  const baseDenom = (base.stimmenBopp || 0) + (base.stimmenFritschi || 0);
+  const p1 = baseDenom > 0 ? base.stimmenBopp / baseDenom : 0.5;
+  const pHat = clamp(p1 + swingAvg, 0, 1);
+
+  const beteiligung = beteiligungAvg ?? (base.beteiligung || 0) / 100;
+  // (Bopp+Fritschi)-Stimmen-Verhältnis zu Wahlberechtigten im 1. WG, skaliert mit Beteiligungs-Quotient
+  const baselineRatio = wb > 0 ? baseDenom / wb : 0.45;
+  const beteiligungRatio = base.beteiligung ? beteiligung / (base.beteiligung / 100) : 1;
+  const stimmenBF = wb * baselineRatio * beteiligungRatio;
+
+  // Verhältnisse aus 1. WG übernehmen — eingelegt/gueltig/ungueltig/leer/vereinzelte
+  // skalieren proportional zu eingelegten Stimmen.
+  const eingelegteEst = wb * beteiligung;
+  const baseEingelegte = base.eingelegte || wb * (base.beteiligung / 100 || 0.5);
+  const skalierung = baseEingelegte > 0 ? eingelegteEst / baseEingelegte : 1;
+
+  const ungueltigEst = (base.ungueltige || 0) * skalierung;
+  const leereEst = (base.leere || 0) * skalierung;
+  const vereinzelteEst = (base.stimmenVereinzelte || 0) * skalierung;
+  // gueltig = bopp + fritschi + vereinzelte + leer (konsistent mit Komponenten)
+  const gueltigEst = stimmenBF + vereinzelteEst + leereEst;
+
+  return {
+    geschaetzteStimmenBopp: stimmenBF * pHat,
+    geschaetzteStimmenFritschi: stimmenBF * (1 - pHat),
+    geschaetzteStimmenBF: stimmenBF,
+    geschaetzteStimmenVereinzelte: vereinzelteEst,
+    geschaetzteGueltig: gueltigEst,
+    geschaetzteEingelegte: eingelegteEst,
+    geschaetzteUngueltige: ungueltigEst,
+    geschaetzteLeere: leereEst,
+    geschaetzteBeteiligung: beteiligung * 100,
+    geschaetzterAnteilBopp: pHat,
+    wahlberechtigte: wb,
+  };
+}
+
+/** Hauptfunktion — liefert komplettes Hochrechnungs-Objekt. */
 export function project(baseline, current) {
-  if (!baseline || !current) {
-    return emptyProjection("Daten fehlen");
-  }
+  if (!baseline || !current) return emptyProjection("Daten fehlen");
+
   const baselineByName = indexByName(baseline.stadtkreise);
   const ausgezaehlt = (current.stadtkreise || []).filter((s) => s.ausgezaehlt);
   const offen = (current.stadtkreise || []).filter((s) => !s.ausgezaehlt);
 
-  // Aktueller Stand (nur ausgezählte)
   const aktuell = sumActual(ausgezaehlt);
   const baselineTotal = sumBaseline(baseline.stadtkreise);
+  const { swingAvg, swingSd, swings } = computeSwing(ausgezaehlt, baselineByName);
+  const beteiligungAvg = computeAvgBeteiligung(ausgezaehlt, baseline);
 
-  // Sonderfall: 0 ausgezählt
+  // === Sonderfall: 0 ausgezählt =====================================
   if (ausgezaehlt.length === 0) {
+    const stadtkreise = enrichStadtkreise(current.stadtkreise, baselineByName, null, null, null);
     return {
       status: "warten",
       message: "Noch keine Stadtkreise ausgezählt.",
@@ -64,15 +98,18 @@ export function project(baseline, current) {
       geschaetzteStimmen: null,
       totalStimmen: null,
       baselineTotal,
-      stadtkreise: enrichStadtkreise(current.stadtkreise, baselineByName, null),
+      stadtkreise,
       timestamp: current.timestamp,
     };
   }
 
-  // Sonderfall: alles ausgezählt
+  // === Sonderfall: alles ausgezählt =================================
   if (offen.length === 0) {
     const stimmenTotal = aktuell.stimmenBopp + aktuell.stimmenFritschi;
     const p = stimmenTotal > 0 ? aktuell.stimmenBopp / stimmenTotal : null;
+    const stadtkreise = enrichStadtkreise(
+      current.stadtkreise, baselineByName, swingAvg, null, null,
+    );
     return {
       status: "final",
       message: "Alle Stadtkreise ausgezählt.",
@@ -81,76 +118,98 @@ export function project(baseline, current) {
         anteilBopp: p,
         anteilBoppLower: p,
         anteilBoppUpper: p,
+        anteilBoppLower99: p,
+        anteilBoppUpper99: p,
         stimmenBopp: aktuell.stimmenBopp,
         stimmenFritschi: aktuell.stimmenFritschi,
+        vorsprung: aktuell.stimmenBopp - aktuell.stimmenFritschi,
+        vorsprungLower: aktuell.stimmenBopp - aktuell.stimmenFritschi,
+        vorsprungUpper: aktuell.stimmenBopp - aktuell.stimmenFritschi,
+        vorsprungLower99: aktuell.stimmenBopp - aktuell.stimmenFritschi,
+        vorsprungUpper99: aktuell.stimmenBopp - aktuell.stimmenFritschi,
         beteiligung: aktuell.beteiligung,
+        gueltig: aktuell.gueltig,
+        ungueltige: aktuell.ungueltige,
+        leere: aktuell.leere,
+        stimmenVereinzelte: aktuell.stimmenVereinzelte,
+        eingelegte: aktuell.eingelegte,
+        wahlberechtigte: aktuell.wahlberechtigte,
       },
       pSiegBopp: p == null ? null : p > 0.5 ? 1 : p < 0.5 ? 0 : 0.5,
-      swingAvg: computeSwing(ausgezaehlt, baselineByName).swingAvg,
-      swingSd: computeSwing(ausgezaehlt, baselineByName).swingSd,
+      swingAvg,
+      swingSd,
+      swings,
       ausgezaehlteKreise: ausgezaehlt.length,
       offeneKreise: 0,
       ausgezaehlteStimmen: stimmenTotal,
       geschaetzteStimmen: 0,
       totalStimmen: stimmenTotal,
       baselineTotal,
-      stadtkreise: enrichStadtkreise(
-        current.stadtkreise,
-        baselineByName,
-        computeSwing(ausgezaehlt, baselineByName).swingAvg,
-      ),
+      stadtkreise,
       timestamp: current.timestamp,
     };
   }
 
-  // Hauptfall: Mix
-  const { swingAvg, swingSd, swings } = computeSwing(ausgezaehlt, baselineByName);
-  const beteiligungAvg = computeAvgBeteiligung(ausgezaehlt, baseline);
-  const baselineByNameMap = baselineByName;
-
-  // Schätze offene Kreise
+  // === Hauptfall: Mix aus ausgezählt + offen ========================
+  // Schätzungen pro offenen Kreis sammeln
+  const schaetzungen = new Map(); // name -> estimate
   let geschaetzteStimmenBopp = 0;
   let geschaetzteStimmenFritschi = 0;
-  let geschaetzteStimmenTotal = 0;
+  let geschaetzteStimmenBF = 0;
+  let geschaetzteStimmenVereinzelte = 0;
+  let geschaetzteEingelegte = 0;
+  let geschaetzteGueltig = 0;
+  let geschaetzteUngueltige = 0;
+  let geschaetzteLeere = 0;
+  let geschaetzteWahlberechtigte = 0;
   for (const k of offen) {
-    const base = baselineByNameMap.get(k.name);
+    const base = baselineByName.get(k.name);
     if (!base) continue;
-    const baseDenom = (base.stimmenBopp || 0) + (base.stimmenFritschi || 0);
-    const p1 = baseDenom > 0 ? base.stimmenBopp / baseDenom : 0.5;
-    const pHat = clamp(p1 + swingAvg, 0, 1);
-    // Erwartete Stimmen: Wahlberechtigte * Beteiligung
-    // (Beteiligung 1.WG hat sich bisher nicht stark unterschieden)
-    const wb = base.wahlberechtigte || 0;
-    const beteiligung = beteiligungAvg ?? (base.beteiligung || 0) / 100;
-    // Erwartete (Bopp+Fritschi)-Stimmen im Stadtkreis:
-    // Verhältnis (Bopp+Fritschi)/Wahlberechtigte aus 1. WG, skaliert mit Beteiligungs-Quotient.
-    const baselineRatio = base.wahlberechtigte
-      ? (base.stimmenBopp + base.stimmenFritschi) / base.wahlberechtigte
-      : 0.45;
-    const beteiligungRatio = base.beteiligung
-      ? beteiligung / (base.beteiligung / 100)
-      : 1;
-    const stimmen = wb * baselineRatio * beteiligungRatio;
-
-    geschaetzteStimmenBopp += stimmen * pHat;
-    geschaetzteStimmenFritschi += stimmen * (1 - pHat);
-    geschaetzteStimmenTotal += stimmen;
+    const e = estimateOpenKreis(base, swingAvg, beteiligungAvg);
+    schaetzungen.set(k.name, e);
+    geschaetzteStimmenBopp += e.geschaetzteStimmenBopp;
+    geschaetzteStimmenFritschi += e.geschaetzteStimmenFritschi;
+    geschaetzteStimmenBF += e.geschaetzteStimmenBF;
+    geschaetzteStimmenVereinzelte += e.geschaetzteStimmenVereinzelte;
+    geschaetzteEingelegte += e.geschaetzteEingelegte;
+    geschaetzteGueltig += e.geschaetzteGueltig;
+    geschaetzteUngueltige += e.geschaetzteUngueltige;
+    geschaetzteLeere += e.geschaetzteLeere;
+    geschaetzteWahlberechtigte += e.wahlberechtigte;
   }
 
   const stimmenBoppHR = aktuell.stimmenBopp + geschaetzteStimmenBopp;
   const stimmenFritschiHR = aktuell.stimmenFritschi + geschaetzteStimmenFritschi;
-  const total = stimmenBoppHR + stimmenFritschiHR;
-  const p = total > 0 ? stimmenBoppHR / total : null;
+  const totalBF = stimmenBoppHR + stimmenFritschiHR;
+  const p = totalBF > 0 ? stimmenBoppHR / totalBF : null;
 
-  // SE: Swing-SD * (Anteil noch nicht ausgezählter Stimmen).
-  // Konservative Approximation. Bei nur 1 ausgezähltem Kreis: swingSd=null → wir
-  // setzen ein Fallback-SD von 0.025 (≈±2.5pp).
-  const offenAnteilStimmen = total > 0 ? geschaetzteStimmenTotal / total : 0;
+  const totalEingelegteHR = aktuell.eingelegte + geschaetzteEingelegte;
+  const totalGueltigHR = aktuell.gueltig + geschaetzteGueltig;
+  const totalUngueltigHR = aktuell.ungueltige + geschaetzteUngueltige;
+  const totalLeereHR = aktuell.leere + geschaetzteLeere;
+  const totalVereinzelteHR = aktuell.stimmenVereinzelte + geschaetzteStimmenVereinzelte;
+  const totalWahlberechtigteHR = aktuell.wahlberechtigte + geschaetzteWahlberechtigte;
+  const totalBeteiligungHR =
+    totalWahlberechtigteHR > 0 ? (totalEingelegteHR / totalWahlberechtigteHR) * 100 : null;
+
+  // Konfidenzintervall: Swing-SD * Anteil noch nicht ausgezählter Stimmen.
+  // Fallback ±2.5pp wenn nur 1 ausgezählter Kreis (swingSd=null).
+  const offenAnteilStimmen = totalBF > 0 ? geschaetzteStimmenBF / totalBF : 0;
   const sdEff = (swingSd ?? 0.025) * offenAnteilStimmen;
-  const lower = p == null ? null : clamp(p - Z_95 * sdEff, 0, 1);
-  const upper = p == null ? null : clamp(p + Z_95 * sdEff, 0, 1);
+  const lower95 = p == null ? null : clamp(p - Z_95 * sdEff, 0, 1);
+  const upper95 = p == null ? null : clamp(p + Z_95 * sdEff, 0, 1);
+  const lower99 = p == null ? null : clamp(p - Z_99 * sdEff, 0, 1);
+  const upper99 = p == null ? null : clamp(p + Z_99 * sdEff, 0, 1);
   const pSiegBopp =
-    p == null ? null : sdEff < 1e-9 ? (p > 0.5 ? 1 : 0) : 1 - normCdf((0.5 - p) / sdEff);
+    p == null
+      ? null
+      : sdEff < 1e-9
+        ? p > 0.5 ? 1 : 0
+        : 1 - normCdf((0.5 - p) / sdEff);
+
+  const stadtkreise = enrichStadtkreise(
+    current.stadtkreise, baselineByName, swingAvg, schaetzungen, beteiligungAvg,
+  );
 
   return {
     status: ausgezaehlt.length === 1 ? "vorlaeufig" : "hochgerechnet",
@@ -161,11 +220,24 @@ export function project(baseline, current) {
     aktuell,
     hochrechnung: {
       anteilBopp: p,
-      anteilBoppLower: lower,
-      anteilBoppUpper: upper,
+      anteilBoppLower: lower95,
+      anteilBoppUpper: upper95,
+      anteilBoppLower99: lower99,
+      anteilBoppUpper99: upper99,
       stimmenBopp: stimmenBoppHR,
       stimmenFritschi: stimmenFritschiHR,
-      beteiligung: beteiligungAvg != null ? beteiligungAvg * 100 : null,
+      vorsprung: stimmenBoppHR - stimmenFritschiHR,
+      vorsprungLower: lower95 != null ? totalBF * (2 * lower95 - 1) : null,
+      vorsprungUpper: upper95 != null ? totalBF * (2 * upper95 - 1) : null,
+      vorsprungLower99: lower99 != null ? totalBF * (2 * lower99 - 1) : null,
+      vorsprungUpper99: upper99 != null ? totalBF * (2 * upper99 - 1) : null,
+      beteiligung: totalBeteiligungHR,
+      gueltig: totalGueltigHR,
+      ungueltige: totalUngueltigHR,
+      leere: totalLeereHR,
+      stimmenVereinzelte: totalVereinzelteHR,
+      eingelegte: totalEingelegteHR,
+      wahlberechtigte: totalWahlberechtigteHR,
     },
     pSiegBopp,
     swingAvg,
@@ -174,10 +246,10 @@ export function project(baseline, current) {
     ausgezaehlteKreise: ausgezaehlt.length,
     offeneKreise: offen.length,
     ausgezaehlteStimmen: aktuell.stimmenBopp + aktuell.stimmenFritschi,
-    geschaetzteStimmen: geschaetzteStimmenTotal,
-    totalStimmen: total,
+    geschaetzteStimmen: geschaetzteStimmenBF,
+    totalStimmen: totalBF,
     baselineTotal,
-    stadtkreise: enrichStadtkreise(current.stadtkreise, baselineByName, swingAvg),
+    stadtkreise,
     timestamp: current.timestamp,
   };
 }
@@ -200,15 +272,14 @@ function indexByName(stadtkreise) {
 }
 
 function sumActual(ausgezaehlt) {
-  let b = 0,
-    f = 0,
-    g = 0,
-    e = 0,
-    wb = 0;
+  let b = 0, f = 0, v = 0, g = 0, u = 0, l = 0, e = 0, wb = 0;
   for (const k of ausgezaehlt) {
     b += k.stimmenBopp || 0;
     f += k.stimmenFritschi || 0;
+    v += k.stimmenVereinzelte || 0;
     g += k.gueltig || 0;
+    u += k.ungueltige || 0;
+    l += k.leere || 0;
     e += k.eingelegte || 0;
     wb += k.wahlberechtigte || 0;
   }
@@ -216,7 +287,10 @@ function sumActual(ausgezaehlt) {
   return {
     stimmenBopp: b,
     stimmenFritschi: f,
+    stimmenVereinzelte: v,
     gueltig: g,
+    ungueltige: u,
+    leere: l,
     eingelegte: e,
     wahlberechtigte: wb,
     vorsprung: b - f,
@@ -227,10 +301,7 @@ function sumActual(ausgezaehlt) {
 }
 
 function sumBaseline(stadtkreise) {
-  let b = 0,
-    f = 0,
-    wb = 0,
-    g = 0;
+  let b = 0, f = 0, wb = 0, g = 0;
   for (const k of stadtkreise || []) {
     b += k.stimmenBopp || 0;
     f += k.stimmenFritschi || 0;
@@ -260,57 +331,79 @@ function computeSwing(ausgezaehlt, baselineByName) {
     const p1 = base.stimmenBopp / baseDenom;
     swings.push({ name: k.name, p1, p2, swing: p2 - p1, weight: denom });
   }
-  if (swings.length === 0) {
-    return { swingAvg: 0, swingSd: null, swings };
-  }
+  if (swings.length === 0) return { swingAvg: 0, swingSd: null, swings };
   const totalW = swings.reduce((s, x) => s + x.weight, 0);
-  const swingAvg =
-    swings.reduce((s, x) => s + x.swing * x.weight, 0) / totalW;
+  const swingAvg = swings.reduce((s, x) => s + x.swing * x.weight, 0) / totalW;
   let swingSd = null;
   if (swings.length >= 2) {
     const variance =
-      swings.reduce(
-        (s, x) => s + x.weight * (x.swing - swingAvg) ** 2,
-        0,
-      ) / totalW;
+      swings.reduce((s, x) => s + x.weight * (x.swing - swingAvg) ** 2, 0) / totalW;
     swingSd = Math.sqrt(variance);
   }
   return { swingAvg, swingSd, swings };
 }
 
 function computeAvgBeteiligung(ausgezaehlt, baseline) {
-  let weight = 0;
-  let weighted = 0;
+  let weight = 0, weighted = 0;
   for (const k of ausgezaehlt) {
     if (k.beteiligung == null || k.wahlberechtigte == null) continue;
     weight += k.wahlberechtigte;
     weighted += (k.beteiligung / 100) * k.wahlberechtigte;
   }
   if (weight > 0) return weighted / weight;
-  // Fallback 1. Wahlgang
   const b = baseline?.total?.beteiligung;
   return b != null ? b / 100 : null;
 }
 
-function enrichStadtkreise(stadtkreise, baselineByName, swingAvg) {
+/**
+ * Reichert jeden Stadtkreis an. Bei offenen Kreisen wird die Schätzung
+ * eingebettet, sodass das Frontend dieselben Felder rendern kann wie bei
+ * ausgezählten Kreisen.
+ */
+function enrichStadtkreise(stadtkreise, baselineByName, swingAvg, schaetzungen, beteiligungAvg) {
   return (stadtkreise || []).map((k) => {
     const base = baselineByName.get(k.name);
-    let baseAnteilBopp = null;
+    let baselineAnteilBopp = null;
     let swing = null;
     if (base) {
       const denom = base.stimmenBopp + base.stimmenFritschi;
-      if (denom > 0) baseAnteilBopp = base.stimmenBopp / denom;
+      if (denom > 0) baselineAnteilBopp = base.stimmenBopp / denom;
     }
-    if (k.ausgezaehlt && k.anteilBopp != null && baseAnteilBopp != null) {
-      swing = k.anteilBopp - baseAnteilBopp;
+    if (k.ausgezaehlt && k.anteilBopp != null && baselineAnteilBopp != null) {
+      swing = k.anteilBopp - baselineAnteilBopp;
     }
-    return {
+    // Beteiligungs-Diff zur 1.WG (in Prozentpunkten)
+    let beteiligungDiff = null;
+    if (k.ausgezaehlt && k.beteiligung != null && base?.beteiligung != null) {
+      beteiligungDiff = k.beteiligung - base.beteiligung;
+    }
+    const enriched = {
       ...k,
-      baselineAnteilBopp: baseAnteilBopp,
+      baselineAnteilBopp,
       baselineWahlberechtigte: base?.wahlberechtigte ?? null,
       baselineBeteiligung: base?.beteiligung ?? null,
+      baselineStimmenBopp: base?.stimmenBopp ?? null,
+      baselineStimmenFritschi: base?.stimmenFritschi ?? null,
       swing,
+      beteiligungDiff,
     };
+    if (!k.ausgezaehlt && schaetzungen?.has(k.name) && base) {
+      const e = schaetzungen.get(k.name);
+      enriched.geschaetzt = true;
+      enriched.geschaetzteStimmenBopp = e.geschaetzteStimmenBopp;
+      enriched.geschaetzteStimmenFritschi = e.geschaetzteStimmenFritschi;
+      enriched.geschaetzterAnteilBopp = e.geschaetzterAnteilBopp;
+      enriched.geschaetzteBeteiligung = e.geschaetzteBeteiligung;
+      enriched.geschaetzteEingelegte = e.geschaetzteEingelegte;
+      enriched.geschaetzteGueltig = e.geschaetzteGueltig;
+      enriched.geschaetzterSwing = swingAvg;
+      // Geschätzte Beteiligungs-Differenz zur 1.WG
+      enriched.geschaetzteBeteiligungDiff =
+        base.beteiligung != null ? e.geschaetzteBeteiligung - base.beteiligung : null;
+    } else if (!k.ausgezaehlt) {
+      enriched.geschaetzt = false;
+    }
+    return enriched;
   });
 }
 
@@ -318,11 +411,11 @@ function clamp(x, lo, hi) {
   return Math.max(lo, Math.min(hi, x));
 }
 
-// Für Tests:
 export const _internal = {
   normCdf,
   computeSwing,
   computeAvgBeteiligung,
   sumActual,
+  estimateOpenKreis,
   clamp,
 };

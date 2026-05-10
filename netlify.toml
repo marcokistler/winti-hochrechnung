@@ -16,4 +16,9 @@
   to = "/.netlify/functions/timeseries"
   status = 200
 
+[[redirects]]
+  from = "/api/simulate-timeseries"
+  to = "/.netlify/functions/simulate-timeseries"
+  status = 200
+
 # SPA fallback nicht nötig - eine HTML-Seite. Aber sicher: explizit nur API umleiten.

@@ -5,6 +5,7 @@ import { resolveResourceUrl, fetchDayResults, parseStadtpraesidium } from "../li
 import { project } from "../lib/projection.mjs";
 import { getBaseline } from "../lib/baseline.mjs";
 import { readJson, writeJson, KEYS } from "../lib/store.mjs";
+import { mockCurrent } from "../lib/mock.mjs";
 
 const WG2_DATE = "2026-05-10";
 const CACHE_TTL_MS = 20_000;
@@ -12,7 +13,41 @@ const TIMESERIES_MIN_GAP_MS = 60_000; // mind. 1 min zwischen Zeitreihen-Punkten
 
 export async function handler(event) {
   try {
-    const force = event?.queryStringParameters?.force === "1";
+    const qs = event?.queryStringParameters || {};
+    const force = qs.force === "1";
+    const isMock = qs.mock != null;
+
+    // Mock-Modus: Cache umgehen, Zeitreihe nicht persistieren
+    if (isMock) {
+      const baseline = await getBaseline();
+      const current = mockCurrent(baseline, {
+        ausgezaehlt: parseInt(qs.mock, 10) || 0,
+        swingPp: parseFloat(qs.swing) || 0,
+        noisePp: parseFloat(qs.noise) || 0,
+        beteiligungFactor: parseFloat(qs.beteiligung) || 1.0,
+      });
+      const projection = project(baseline, current);
+      return ok({
+        fetchedAt: Date.now(),
+        sourceUrl: "[mock]",
+        sourceTimestamp: current.timestamp,
+        abstimmtag: current.abstimmtag,
+        titel: current.titel,
+        candidates: current.candidates,
+        baseline: {
+          abstimmtag: baseline.abstimmtag,
+          total: baseline.total,
+          anteilBopp:
+            baseline.total &&
+            baseline.total.stimmenBopp /
+              (baseline.total.stimmenBopp + baseline.total.stimmenFritschi),
+        },
+        projection,
+        cache: "mock",
+        mock: current._mock,
+      });
+    }
+
     const cached = await readJson(KEYS.latest);
     if (
       !force &&
@@ -77,6 +112,8 @@ async function maybeAppendTimeseries(projection) {
     anteilBopp: projection.hochrechnung?.anteilBopp ?? null,
     anteilBoppLower: projection.hochrechnung?.anteilBoppLower ?? null,
     anteilBoppUpper: projection.hochrechnung?.anteilBoppUpper ?? null,
+    anteilBoppLower99: projection.hochrechnung?.anteilBoppLower99 ?? null,
+    anteilBoppUpper99: projection.hochrechnung?.anteilBoppUpper99 ?? null,
     pSiegBopp: projection.pSiegBopp ?? null,
     aktuellAnteilBopp: projection.aktuell?.anteilBopp ?? null,
   };
